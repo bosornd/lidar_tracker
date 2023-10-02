@@ -57,7 +57,7 @@ void Datmo::callback(const sensor_msgs::msg::LaserScan::ConstPtr& scan_in){
     //Find position of ego vehicle in world frame, so it can be fed through to the cluster objects
     geometry_msgs::msg::TransformStamped ego_pose = tf_buffer->lookupTransform(world_frame, lidar_frame, tf2::TimePointZero);
     tf2::Transform transform(
-      tf2::Quaternion(ego_pose.rotaion.x, ego_pose.rotaion.y, ego_pose.rotaion.z, ego_pose.rotaion.w),
+      tf2::Quaternion(ego_pose.transform.rotation.x, ego_pose.transform.rotation.y, ego_pose.transform.rotation.z, ego_pose.transform.rotation.w),
       tf2::Vector3(ego_pose.transform.translation.x, ego_pose.transform.translation.y, ego_pose.transform.translation.z));
     
     dt = (rclcpp::Clock(RCL_ROS_TIME).now() - time).seconds();
