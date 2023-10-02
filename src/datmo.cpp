@@ -54,7 +54,6 @@ void Datmo::callback(const sensor_msgs::msg::LaserScan::ConstPtr& scan_in){
 
   // Only if there is a transform between the world and lidar frame continue
   if(tf_buffer->canTransform(world_frame, lidar_frame, tf2::TimePointZero)){
-
     //Find position of ego vehicle in world frame, so it can be fed through to the cluster objects
     geometry_msgs::msg::TransformStamped ego_pose = tf_buffer->lookupTransform(world_frame, lidar_frame, tf2::TimePointZero);
     tf2::Transform transform(
