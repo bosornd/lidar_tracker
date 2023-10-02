@@ -1,31 +1,30 @@
 <?xml version="1.0"?>
-<package format="2">
-  <name>datmo</name>
-  <version>0.0.0</version>
-  <description>The lidar_tracking package</description>
-  
-  <author email="kostaskonkk@gmail.com">Kostas Konstantinidis</author> 
-  <maintainer email="kostaskonkk@gmail.com">Kostas Konstantinidis</maintainer>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>lidar_tracker</name>
+  <version>0.0.1</version>
+  <description>ROS2 Node for LiDAR Tracker</description>
+  <maintainer email="drajin.cho@bosornd.com">Yong Jin, Cho</maintainer>
+  <license>Apache 2.0 License</license>
 
-  <license>BSD</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <build_depend>rclcpp</build_depend>
+  <exec_depend>rclcpp</exec_depend>
 
-   <url type="repository">https://github.com/kostaskonkk/datmo</url> 
-
-  <buildtool_depend>catkin</buildtool_depend>
-  <build_depend>roscpp</build_depend>
   <build_depend>std_msgs</build_depend>
-  <build_depend>cmake_modules</build_depend>
-  <build_export_depend>roscpp</build_export_depend>
-  <build_export_depend>std_msgs</build_export_depend>
-  <exec_depend>roscpp</exec_depend>
   <exec_depend>std_msgs</exec_depend>
-  <build_depend>message_generation</build_depend>
-  <exec_depend>message_runtime</exec_depend> -->
 
+  <build_depend>visualization_msgs</build_depend>
+  <exec_depend>visualization_msgs</exec_depend>
 
+  <build_depend>tracker_msgs</build_depend>
+  <exec_depend>tracker_msgs</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
 
   <export>
-
+    <build_type>ament_cmake</build_type>
   </export>
 </package>

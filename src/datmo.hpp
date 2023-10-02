@@ -1,4 +1,4 @@
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
 #include <math.h>       /* atan */
 #include <omp.h>      //Multi-threading
 #include <vector>
@@ -9,13 +9,14 @@
 #include <iostream>
 #include <fstream>
 
-#include <sensor_msgs/LaserScan.h>
-#include <visualization_msgs/Marker.h>
-#include <visualization_msgs/MarkerArray.h>
-#include <geometry_msgs/Point.h>
-#include <tf/tf.h>
-#include <datmo/TrackArray.h>
-#include <datmo/Track.h>
+#include <sensor_msgs/msg/laser_scan.hpp>
+#include <visualization_msgs/msg/marker.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
+#include <geometry_msgs/msg/point.hpp>
+#include <tracker_msgs/msg/track_array.hpp>
+#include <tracker_msgs/msg/track.hpp>
+
+#include <tf2_ros/buffer.h>
 
 #include "cluster.hpp"
 
@@ -29,26 +30,25 @@ using namespace std;
 // This node segments the point cloud based on the break-point detector algorithm.
 // This algorithm is based on "L-Shape Model Switching-Based Precise Motion Tracking 
 // of Moving Vehicles Using Laser Scanners.
-class Datmo
+class Datmo : public rclcpp::Node
 {
 public:
   Datmo();
   ~Datmo();
 
-  void callback(const sensor_msgs::LaserScan::ConstPtr &);
-  void Clustering(const sensor_msgs::LaserScan::ConstPtr& , vector<pointList> &);
+  void callback(const sensor_msgs::msg::LaserScan::ConstPtr &);
+  void Clustering(const sensor_msgs::msg::LaserScan::ConstPtr& , vector<pointList> &);
   void visualiseGroupedPoints(const vector<pointList> &);
   void transformPointList(const pointList& , pointList& );
 
-  tf::TransformListener tf_listener;
 private:
-  ros::Publisher pub_marker_array; 
-  ros::Publisher pub_tracks_mean;
-  ros::Publisher pub_tracks_mean_kf;
-  ros::Publisher pub_tracks_box;
+  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_marker_array;
+  rclcpp::Publisher<tracker_msgs::msg::TrackArray>::SharedPtr pub_tracks_mean;
+  rclcpp::Publisher<tracker_msgs::msg::TrackArray>::SharedPtr pub_tracks_mean_kf;
+  rclcpp::Publisher<tracker_msgs::msg::TrackArray>::SharedPtr pub_tracks_box;
 
-  ros::Subscriber sub_scan;
-  sensor_msgs::LaserScan scan;
+  rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_scan;
+  sensor_msgs::msg::LaserScan scan;
   vector<Cluster> clusters;
 
   ofstream whole; // file to write the program duration
@@ -56,9 +56,11 @@ private:
   ofstream rect_fitting; //write rectangle fitting duration
   ofstream testing; //various testing
 
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer;
+
   //Tuning Parameteres
   double dt;
-  ros::Time time;
+  rclcpp::Time time;
 
   unsigned long int cg       = 1;//group counter to be used as id of the clusters
   //initialised as one, because 0 index take the msgs that fail to be initialized

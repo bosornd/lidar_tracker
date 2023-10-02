@@ -1,62 +1,46 @@
-cmake_minimum_required(VERSION 2.8.3)
-project(datmo)
-add_compile_options(-std=c++11)
-# list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+cmake_minimum_required(VERSION 3.8)
+project(lidar_tracker)
 
-## Find catkin macros and libraries
-## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
-## is used, also find other catkin packages
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)# required for YCM
-find_package(catkin REQUIRED COMPONENTS
-  roscpp
-  std_msgs
-  tf
-  nav_msgs
-  sensor_msgs
-  cmake_modules REQUIRED
-  message_generation
-)
-find_package(Eigen REQUIRED)
-find_package(OpenMP REQUIRED)
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
 
-#MultiThreading Library
-OPTION (USE_OpenMP "Use OpenMP" OFF)
-IF(USE_OpenMP)
-  FIND_PACKAGE(OpenMP)
-  IF(OPENMP_FOUND)
-    #SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-    #SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
-  ENDIF()
-ENDIF()
+# find dependencies
+find_package(ament_cmake REQUIRED)
+# uncomment the following section in order to fill in
+# further dependencies manually.
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 
-add_message_files(
-  FILES
-  Track.msg
-  TrackArray.msg
-)
+find_package(tracker_msgs REQUIRED)
+find_package(Eigen3 REQUIRED)
 
-generate_messages(
-  DEPENDENCIES
-  nav_msgs
-  std_msgs
-)
+add_executable(lidar_tracker src/l_shape_tracker.cpp src/main.cpp src/kalman-cpp/kalman.cpp src/datmo.cpp src/cluster.cpp)
+ament_target_dependencies(lidar_tracker rclcpp std_msgs sensor_msgs nav_msgs visualization_msgs tf2_ros tf2_geometry_msgs tracker_msgs Eigen3)
 
-catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES lidar_tracking
- CATKIN_DEPENDS roscpp std_msgs message_runtime
-#  DEPENDS system_lib
-)
+install(DIRECTORY
+  launch config
+	DESTINATION share/${PROJECT_NAME})
 
+install(TARGETS
+  lidar_tracker
+  DESTINATION lib/${PROJECT_NAME})
 
-include_directories(
-# include
-  ${catkin_INCLUDE_DIRS}
-  ${Eigen_INCLUDE_DIRS}
-)
+if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  # the following line skips the linter which checks for copyrights
+  # comment the line when a copyright and license is added to all source files
+  set(ament_cmake_copyright_FOUND TRUE)
+  # the following line skips cpplint (only works in a git repo)
+  # comment the line when this package is in a git repo and when
+  # a copyright and license is added to all source files
+  set(ament_cmake_cpplint_FOUND TRUE)
+  ament_lint_auto_find_test_dependencies()
+endif()
 
-
-add_executable(datmo  src/l_shape_tracker.cpp src/main.cpp src/kalman-cpp/kalman.cpp src/datmo.cpp src/cluster.cpp)
-add_dependencies(datmo ${catkin_EXPORTED_TARGETS})
-target_link_libraries(datmo ${catkin_LIBRARIES})
+ament_package()

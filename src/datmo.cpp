@@ -1,63 +1,70 @@
 #include "datmo.hpp"
 
-Datmo::Datmo(){
-  ros::NodeHandle n; 
-  ros::NodeHandle n_private("~");
-  ROS_INFO("Starting Detection And Tracking of Moving Objects");
+#define GET_PARAM(key, value, default_value) declare_parameter(key, default_value); get_parameter(key, value);
 
-  n_private.param("lidar_frame", lidar_frame, string("laser"));
-  n_private.param("world_frame", world_frame, string("map"));
-  n_private.param("threshold_distance", dth, 0.2);
-  n_private.param("euclidean_distance", euclidean_distance, 0.25);
-  n_private.param("pub_markers", p_marker_pub, false);
-  n_private.param("write_execution_times", w_exec_times, false);
+Datmo::Datmo() : Node("lidar_tracker")
+{
+  RCLCPP_INFO(get_logger(), "Starting Detection And Tracking of Moving Objects");
+
+  GET_PARAM("lidar_frame", lidar_frame, string("laser"));
+  GET_PARAM("world_frame", world_frame, string("map"));
+  GET_PARAM("threshold_distance", dth, 0.2);
+  GET_PARAM("euclidean_distance", euclidean_distance, 0.25);
+  GET_PARAM("pub_markers", p_marker_pub, false);
+  GET_PARAM("write_execution_times", w_exec_times, false);
 
 
-  pub_tracks_mean    = n.advertise<datmo::TrackArray>("tracks/mean", 10);
-  pub_tracks_mean_kf = n.advertise<datmo::TrackArray>("tracks/mean_kf", 10);
-  pub_tracks_box     = n.advertise<datmo::TrackArray>("tracks/box", 10);
-  pub_marker_array   = n.advertise<visualization_msgs::MarkerArray>("marker_array", 10);
-  sub_scan = n.subscribe("/scan", 1, &Datmo::callback, this);
+  pub_tracks_mean    = create_publisher<tracker_msgs::msg::TrackArray>("tracks/mean", 10);
+  pub_tracks_mean_kf = create_publisher<tracker_msgs::msg::TrackArray>("tracks/mean_kf", 10);
+  pub_tracks_box     = create_publisher<tracker_msgs::msg::TrackArray>("tracks/box", 10);
+  pub_marker_array   = create_publisher<visualization_msgs::msg::MarkerArray>("marker_array", 10);
+
+  sub_scan = create_subscription<sensor_msgs::msg::LaserScan>("/scan", 1, std::bind(&Datmo::callback, this, std::placeholders::_1));
+
+  tf_buffer =  std::make_unique<tf2_ros::Buffer>(this->get_clock());;
 
   if (w_exec_times) {
-    whole.open ("/home/kostas/results/exec_time/whole.csv");
+    whole.open ("whole.csv");
     whole << ("nano,milli\n");
-    clustering.open ("/home/kostas/results/exec_time/clustering.csv");
+    clustering.open ("clustering.csv");
     clustering << ("nano\n");
-    rect_fitting.open("/home/kostas/results/exec_time/rect_fitting.csv");
+    rect_fitting.open("rect_fitting.csv");
     rect_fitting << ("dur_nano,num_points\n");
-    testing.open("/home/kostas/results/exec_time/testing.csv");
+    testing.open("testing.csv");
     testing << ("clusters\n");
   }
 
 }
 Datmo::~Datmo(){
   if (w_exec_times){
-  whole.close();
-  clustering.close();
-  rect_fitting.close();
-  testing.close();
+    whole.close();
+    clustering.close();
+    rect_fitting.close();
+    testing.close();
   }
 }
-void Datmo::callback(const sensor_msgs::LaserScan::ConstPtr& scan_in){
+void Datmo::callback(const sensor_msgs::msg::LaserScan::ConstPtr& scan_in){
 
   // delete all Markers 
-  visualization_msgs::Marker marker;
-  visualization_msgs::MarkerArray markera;
+  visualization_msgs::msg::Marker marker;
+  visualization_msgs::msg::MarkerArray markera;
   marker.action =3;
   markera.markers.push_back(marker);
-  pub_marker_array.publish(markera);
+  pub_marker_array->publish(markera);
 
   // Only if there is a transform between the world and lidar frame continue
-  if(tf_listener.canTransform(world_frame, lidar_frame, ros::Time())){
+  if(tf_buffer->canTransform(world_frame, lidar_frame, tf2::TimePointZero)){
 
     //Find position of ego vehicle in world frame, so it can be fed through to the cluster objects
-    tf::StampedTransform ego_pose;
-    tf_listener.lookupTransform(world_frame, lidar_frame, ros::Time(0), ego_pose);
+    geometry_msgs::msg::TransformStamped ego_pose = tf_buffer->lookupTransform(world_frame, lidar_frame, tf2::TimePointZero);
+    tf2::Transform transform(
+      tf2::Quaternion(ego_pose.rotaion.x, ego_pose.rotaion.y, ego_pose.rotaion.z, ego_pose.rotaion.w)
+      Vector3(ego_pose.transform.translation.x, ego_pose.transform.translation.y, ego_pose.transform.translation.z));
+    //(ego_pose.transform.rotation, ego_pose.transform.translation);
     
-    dt = (ros::Time::now() - time).toSec();
-    if (time > ros::Time::now()){clusters.clear();}
-    time = ros::Time::now();
+    dt = (rclcpp::Clock(RCL_ROS_TIME).now() - time).seconds();
+    if (time > rclcpp::Clock(RCL_ROS_TIME).now()){clusters.clear();}
+    time = rclcpp::Clock(RCL_ROS_TIME).now();
     auto start = chrono::steady_clock::now();
 
     vector<pointList> point_clusters_not_transformed;
@@ -127,7 +134,7 @@ void Datmo::callback(const sensor_msgs::LaserScan::ConstPtr& scan_in){
     //#pragma omp parallel for
     for(unsigned int p=0; p<pairs.size();++p)
     {
-        clusters[pairs[p].first].update(point_clusters[pairs[p].second], 0.1, ego_pose);
+        clusters[pairs[p].first].update(point_clusters[pairs[p].second], 0.1, transform);
     }
        
      //Delete Not Associated Clusters
@@ -154,18 +161,18 @@ void Datmo::callback(const sensor_msgs::LaserScan::ConstPtr& scan_in){
     {
       if(g_matched[i] == false)
       {
-        Cluster cl(cclusters, point_clusters[i], dt, world_frame, ego_pose);
+        Cluster cl(cclusters, point_clusters[i], dt, world_frame, transform);
         cclusters++;
         clusters.push_back(cl);
       } 
     }
     
     //Visualizations and msg publications
-    visualization_msgs::MarkerArray marker_array;
-    datmo::TrackArray mean_track_array; 
-    datmo::TrackArray filtered_track_array; 
-    datmo::TrackArray box_track_array; 
-    datmo::TrackArray obs_track_array; 
+    visualization_msgs::msg::MarkerArray marker_array;
+    tracker_msgs::msg::TrackArray mean_track_array; 
+    tracker_msgs::msg::TrackArray filtered_track_array; 
+    tracker_msgs::msg::TrackArray box_track_array; 
+    tracker_msgs::msg::TrackArray obs_track_array; 
     for (unsigned int i =0; i<clusters.size();i++){
 
       mean_track_array.tracks.push_back(clusters[i].msg_track_mean);
@@ -194,24 +201,24 @@ void Datmo::callback(const sensor_msgs::LaserScan::ConstPtr& scan_in){
         rect_fitting << clusters[i].getRectangleFittingExecutionTime().first<<"\n";
       }
     }
-    //ros::Time before_time;
-    //before_time = ros::Time::now();
+    //rclcpp::Time before_time;
+    //before_time = rclcpp::Clock(RCL_ROS_TIME).now();
     //double duration;
     //for (unsigned int i =0; i<clusters.size();i++){
         //marker_array.markers.push_back(clusters[i].rectangleFitting());
     //}
-    //duration = (ros::Time::now() - before_time).toSec();
-    //ROS_INFO_STREAM("Seconds: "<<duration);
+    //duration = (rclcpp::Clock(RCL_ROS_TIME).now() - before_time).seconds();
+    //RCLCPP_INFO_STREAM(get_logger(), "Seconds: "<<duration);
 
-    pub_marker_array.publish(marker_array);
-    pub_tracks_mean.publish(mean_track_array);
-    pub_tracks_mean_kf.publish(filtered_track_array);
-    pub_tracks_box.publish(box_track_array);
+    pub_marker_array->publish(marker_array);
+    pub_tracks_mean->publish(mean_track_array);
+    pub_tracks_mean_kf->publish(filtered_track_array);
+    pub_tracks_box->publish(box_track_array);
     visualiseGroupedPoints(point_clusters);
     
     //TODO Publish in Rviz upper right corner this information
-     //ROS_INFO_STREAM("Groups"<<point_clusters.size()<< "Clusters: "<<clusters.size());
-    // ROS_INFO_STREAM("Time"<<ros::Time::now()<<"clusters: "<<clusters.size() << "Filters: "<<filters.size());
+     //RCLCPP_INFO_STREAM(get_logger(), "Groups"<<point_clusters.size()<< "Clusters: "<<clusters.size());
+    // RCLCPP_INFO_STREAM(get_logger(), "Time"<<rclcpp::Clock(RCL_ROS_TIME).now()<<"clusters: "<<clusters.size() << "Filters: "<<filters.size());
 
 
      if (w_exec_times) {
@@ -223,22 +230,22 @@ void Datmo::callback(const sensor_msgs::LaserScan::ConstPtr& scan_in){
      }
   }
   else{ //If the tf is not possible init all states at 0
-    ROS_WARN_STREAM("No transform could be found between "<<lidar_frame<<" and "<<world_frame);
+    RCLCPP_WARN_STREAM(get_logger(), "No transform could be found between "<<lidar_frame<<" and "<<world_frame);
   };
 
     
 }
 void Datmo::visualiseGroupedPoints(const vector<pointList>& point_clusters){
   //Publishing the clusters with different colors
-  visualization_msgs::MarkerArray marker_array;
+  visualization_msgs::msg::MarkerArray marker_array;
   //Populate grouped points message
-  visualization_msgs::Marker gpoints;
+  visualization_msgs::msg::Marker gpoints;
   gpoints.header.frame_id = world_frame;
-  gpoints.header.stamp = ros::Time(0);
+  gpoints.header.stamp = rclcpp::Time(0);
   gpoints.ns = "clustered_points";
-  gpoints.action = visualization_msgs::Marker::ADD;
+  gpoints.action = visualization_msgs::msg::Marker::ADD;
   gpoints.pose.orientation.w = 1.0;
-  gpoints.type = visualization_msgs::Marker::POINTS;
+  gpoints.type = visualization_msgs::msg::Marker::POINTS;
   // POINTS markers use x and y scale for width/height respectively
   gpoints.scale.x = 0.13;
   gpoints.scale.y = 0.13;
@@ -254,9 +261,9 @@ void Datmo::visualiseGroupedPoints(const vector<pointList>& point_clusters){
     gpoints.color.b = randomb;
     gpoints.color.r = randomr;
     gpoints.color.a = 1.0;
-    gpoints.lifetime = ros::Duration(0.08);
+    gpoints.lifetime = rclcpp::Duration(std::chrono::nanoseconds(80000000));   // 0.08sec
     for(unsigned int j=0; j<point_clusters[i].size(); ++j){
-      geometry_msgs::Point p;
+      geometry_msgs::msg::Point p;
       p.x = point_clusters[i][j].first;
       p.y = point_clusters[i][j].second;
       p.z = 0;
@@ -265,11 +272,11 @@ void Datmo::visualiseGroupedPoints(const vector<pointList>& point_clusters){
     marker_array.markers.push_back(gpoints);
     gpoints.points.clear();
   }
-  pub_marker_array.publish(marker_array);
+  pub_marker_array->publish(marker_array);
 
 }
 
-void Datmo::Clustering(const sensor_msgs::LaserScan::ConstPtr& scan_in, vector<pointList> &clusters){
+void Datmo::Clustering(const sensor_msgs::msg::LaserScan::ConstPtr& scan_in, vector<pointList> &clusters){
   scan = *scan_in;
 
 
@@ -390,14 +397,14 @@ void Datmo::transformPointList(const pointList& in, pointList& out){
   //transformPoint function
   //There is not try catch block because it is supposed to be already encompassed into one
   
-  geometry_msgs::PointStamped point_in, point_out;
+  geometry_msgs::msg::PointStamped point_in, point_out;
   Point point; 
   point_in.header.frame_id = lidar_frame;
-  point_in.header.stamp = ros::Time(0);
+  point_in.header.stamp = rclcpp::Time(0);
   for (unsigned int i = 0; i < in.size(); ++i) {
     point_in.point.x = in[i].first;
     point_in.point.y = in[i].second;
-    tf_listener.transformPoint(world_frame, point_in , point_out);
+    tf_buffer->transform<geometry_msgs::msg::PointStamped>(point_in , point_out, world_frame);
     point.first = point_out.point.x;
     point.second= point_out.point.y;
     out.push_back(point);
